@@ -54,19 +54,7 @@ namespace ConsoleApp1
             {
                 if (index < size)
                 {
-                    if (value)
-                    {
-                        ulong tmp = 1ul;
-                        tmp = tmp << index;
-                        this.value = this.value | tmp;
-                    }
-                    else
-                    {
-                        ulong tmp = 0;
-                        tmp = ~tmp;
-                        tmp -= 1ul << index;
-                        this.value = this.value & tmp;
-                    }
+                   this.value = this.value & ~(1ul << index) | (Convert.ToUInt64(value) << index); 
                 }
                 return false;
             }
@@ -75,18 +63,11 @@ namespace ConsoleApp1
             {
                 if (index < size)
                 {
-                    ulong tmp = 1;
-                    tmp = tmp << index;
-                    return (value & tmp) != 0;
+                    return ((value >> index) & 1) == 1;
                 }
                 return false;
             }
-
-            public void clearZero()
-            {
-                while (!getBit((int)(size - 1)) && size > 1)
-                    size--;
-            }
+ 
             public uint getSize()
             {
                 return size;
@@ -104,16 +85,7 @@ namespace ConsoleApp1
 
             public override String ToString()
             {
-                StringBuilder result = new StringBuilder();
-                for (int i = (int)size - 1; i > -1; i--)
-                {
-                    if (getBit(i))
-                        result.Append(1);
-                    else
-                        result.Append(0);
-                }
-
-                return result.ToString();
+                return Convert.ToString((long) this.value, 2).PadLeft((int)size, '0');
             }
         }
 
@@ -176,31 +148,29 @@ namespace ConsoleApp1
                 return size;
             }
 
-            public Bits getBits(int startIndex, int lastIndex)
-            {
-                if (startIndex < size && lastIndex <= size && lastIndex - startIndex > 0 && lastIndex - startIndex < 65)
-                {
-                    Bits res = new Bits();
-                    for (int i = startIndex; i < lastIndex; i++)
-                    {
-                        res.addBit(getBit(i));
-                    }
-                    return res;
-                }
-                return null;
-            }
+            //public Bits getBits(int startIndex, int lastIndex)
+            //{
+            //    if (startIndex < size && lastIndex <= size && lastIndex - startIndex > 0 && lastIndex - startIndex < 65)
+            //    {
+            //        ulong rawResult = 0;
+            //        if (startIndex % 64 < lastIndex % 64)
+            //        {
+            //            rawResult = value[startIndex / 64] >> (startIndex % 64);
+            //            rawResult = rawResult & ((1ul << (lastIndex - startIndex)) - 1); 
+            //        } 
+            //        else 
+            //        {
+            //            ulong rawResultLeft  = value[startIndex / 64] >> (startIndex % 64);
+            //            ulong rawResultRight = value[startIndex / 64 + 1] & ((1ul << (lastIndex % 64)) - 1);
+            //            rawResult = rawResultLeft | (rawResultRight << (64 - startIndex % 64));
+            //        }
 
-            public BitsStream getSubStream(int startIndex, int lastIndex)
-            {
-                BitsStream result = new BitsStream();
-                for (int i = startIndex; i < lastIndex && i < size; i += 64)
-                {
-                    int size = Math.Min(lastIndex - i, 64);
-                    result.append(getBits(i, i + size));
-                }
+            //        Bits res = new Bits(rawResult, (uint)(lastIndex - startIndex)); 
 
-                return result;
-            }
+            //        return res;
+            //    }
+            //    return null;
+            //} 
 
             public bool getBit(int index)
             {
@@ -210,30 +180,17 @@ namespace ConsoleApp1
                 }
                 return false;
             }
-
-            public bool Equals(BitsStream stream)
-            {
-                if (this.size == stream.size)
-                {
-                    for (int i = 0; i < value.Count; i++)
-                    {
-                        if (this.value[i] != stream.value[i]) return false;
-                    }
-                    return true;
-                }
-                return false;
-            }
         }
 
         class DHF
         {
             BitsStream stream;
-            Dictionary<char, Bits> masks;
+            TreeNode tree;
 
-            public DHF(BitsStream stream, Dictionary<char, Bits> masks)
+            public DHF(BitsStream stream, TreeNode tree)
             {
-                this.stream = stream;
-                this.masks = masks;
+                this.stream = stream; 
+                this.tree = tree;
             }
 
             public void save(String name)
@@ -241,8 +198,7 @@ namespace ConsoleApp1
                 BinaryWriter writer = new BinaryWriter(new FileStream(name + ".dhf", FileMode.Create, FileAccess.Write));
                 BinaryFormatter form = new BinaryFormatter();
 
-                form.Serialize(writer.BaseStream, masks);
-
+                form.Serialize(writer.BaseStream, tree);
 
                 writer.Write(stream.getSize());
                 var array = stream.toArray();
@@ -259,12 +215,12 @@ namespace ConsoleApp1
             public static DHF load(String name)
             {
                 BinaryReader reader = new BinaryReader(new FileStream(name + ".dhf", FileMode.Open, FileAccess.Read));
-
+                
                 BinaryFormatter form = new BinaryFormatter();
-                Dictionary<char, Bits> masks = (Dictionary<char, Bits>)form.Deserialize(reader.BaseStream);
-
+                TreeNode tree = (TreeNode) form.Deserialize(reader.BaseStream);
+                
                 uint size = reader.ReadUInt32();
-                return new DHF(new BitsStream(reader, size), masks);
+                return new DHF(new BitsStream(reader, size), tree);
             }
 
             public BitsStream getStream()
@@ -272,17 +228,18 @@ namespace ConsoleApp1
                 return stream;
             }
 
-            public Dictionary<char, Bits> getMasks()
+            public TreeNode getTree()
             {
-                return masks;
+                return tree;
             }
         }
 
+        [Serializable]
         class TreeNode : IComparable<TreeNode>
         {
             public TreeNode parent { get; set; } = null;
             public TreeNode left { get; set; } = null;
-            public TreeNode rigth { get; set; } = null;
+            public TreeNode right { get; set; } = null;
 
             public char? value { get; set; } = null;
             public int count { get; set; } = 0;
@@ -294,13 +251,6 @@ namespace ConsoleApp1
                 this.parent = parent;
                 this.value = value;
                 this.count = count;
-            }
-
-            public int CompareTo(TreeNode other)
-            {
-                if (value.HasValue && other.value.HasValue)
-                    return value.Value.CompareTo(other.value.Value) | count.CompareTo(other.count);
-                return count.CompareTo(other.count);
             }
 
             public Dictionary<char, Bits> getMasks(Bits bits = null)
@@ -319,11 +269,11 @@ namespace ConsoleApp1
                     }
                 }
 
-                if (rigth != null)
+                if (right != null)
                 {
                     var tmp0 = bits != null ? new Bits(bits) : new Bits();
                     tmp0.addBit(true);
-                    var tmp = rigth.getMasks(tmp0);
+                    var tmp = right.getMasks(tmp0);
 
                     foreach (var obj in tmp)
                     {
@@ -331,20 +281,45 @@ namespace ConsoleApp1
                     }
                 }
 
-                if (value != null)
+                if (value != null && right == null && left == null)
                 {
                     res.Add(value.Value, bits != null ? bits : new Bits(0, 1));
                 }
 
                 return res;
             }
+            public int CompareTo(TreeNode other)
+            {
+                return count.CompareTo(other.count);
+            }
         }
 
-        class TC : IComparer<TreeNode>
+        //class TC : IComparer<TreeNode>
+        //{
+        //    int IComparer<TreeNode>.Compare(TreeNode x, TreeNode y)
+        //    {
+        //        return -x.count.CompareTo(y.count); 
+        //    }
+        //}
+
+        class NodeCmp : IComparer<TreeNode>
         {
             int IComparer<TreeNode>.Compare(TreeNode x, TreeNode y)
             {
-                return -x.count.CompareTo(y.count);
+                int result = x.count.CompareTo(y.count);
+                
+                if (result == 0)
+                {
+                    if (x.value == y.value)
+                    {
+                        return 0;
+                    }
+                    else
+                    {
+                        return -1;
+                    }
+                }
+                return result;
             }
         }
 
@@ -370,39 +345,45 @@ namespace ConsoleApp1
                 return -obj.Value;
             });
 
-            var list = count.ToList().Aggregate(new List<TreeNode>(), (set0, obj) => {
-                set0.Add(new TreeNode(null, obj.Key, obj.Value));
-                return set0;
-            });
+            var orderedList = new SortedDictionary<TreeNode, int>(new NodeCmp());
 
-
-
-            while (list.Count > 1)
+            foreach (var obj in count)
             {
-                list.Sort(new TC());
-
-                var tmp = new TreeNode();
-
-                tmp.rigth = list[list.Count - 1];
-                tmp.left = list[list.Count - 2];
-
-                list[list.Count - 1].parent = tmp;
-                list[list.Count - 2].parent = tmp;
-
-                tmp.count = tmp.rigth.count + tmp.left.count;
-
-                list.Remove(list[list.Count - 1]);
-                list.Remove(list[list.Count - 1]);
-                list.Add(tmp);
+                orderedList.Add(new TreeNode(null, obj.Key, obj.Value), 0);
             }
 
-            var tree = list.First().getMasks();
+            while (orderedList.Count > 1)
+            {
+                KeyValuePair<TreeNode, int> min1 = orderedList.First();
+                orderedList.Remove(min1.Key);
+                
+                
+                KeyValuePair<TreeNode, int> min2 = orderedList.First();
+                orderedList.Remove(min2.Key);
+                
+                var tmp = new TreeNode();
+
+                tmp.right = min1.Key;
+                tmp.left  = min2.Key;
+
+                min1.Key.parent = tmp;
+                min2.Key.parent = tmp;
+
+                tmp.count = min1.Key.count + min2.Key.count; 
+                tmp.value = min1.Key.value;
+
+                orderedList.Add(tmp, 0);
+
+            }
+
+            var tree = orderedList.First().Key;
+            var masks = orderedList.First().Key.getMasks();
 
             BitsStream stream = new BitsStream();
 
             for (int i = 0; i < str.Length; i++)
             {
-                stream.append(tree[str[i]]);
+                stream.append(masks[str[i]]);
             }
 
             new DHF(stream, tree).save("output");
@@ -410,36 +391,31 @@ namespace ConsoleApp1
             var dhf = DHF.load("output");
 
             var unstream = dhf.getStream();
-            tree = dhf.getMasks();
 
             StringBuilder builder = new StringBuilder();
 
             int size = 0;
-            bool boolean = false;
-
-            var l0 = tree.ToList();
-
-            var l = l0.OrderByDescending(obj => obj.Value.getValue());
-
-            var dic = l.ToDictionary((obj) => {
-                return obj.Key;
-            });
+            
+            TreeNode realTree = dhf.getTree();
 
             while (size < unstream.getSize())
             {
-                foreach (var obj in l)
+                TreeNode cur = realTree;
+                while (cur.left != null || cur.right != null)
                 {
-                    var tmp = unstream.getBits(size, size + (int)obj.Value.getSize());
-                    if (tmp != null && tmp.Equals(obj.Value))
+                    var tmp = unstream.getBit(size);
+                    if (tmp)
                     {
-                        builder.Append(obj.Key);
-                        size += (int)obj.Value.getSize();
-                        boolean = true;
-                        break;
+                        cur = cur.right;
                     }
+                    else
+                    {
+                        cur = cur.left;
+                    }
+                    ++size;
                 }
-                if (!boolean) size++;
-                boolean = false;
+
+                builder.Append(cur.value);
             }
 
             StreamWriter outt = new StreamWriter("outputNew.txt");
